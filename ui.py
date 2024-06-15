@@ -23,51 +23,79 @@ class TicketApp:
         self.master.title("Ticket Management System")
         self.master.configure(bg="#ebebeb")
 
+        self.center_window(800, 750)  # Augmenter la hauteur de la fenêtre
+
         self.db_path = './receipts.db'
         initialize_database(self.db_path)
 
         self.selected_event_id = None
 
-        # Add Event Section
-        self.add_section_header(master, "AJOUTER UN EVENEMENT")
+        self.main_frame = ctk.CTkFrame(master)
+        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.event_name_label = ctk.CTkLabel(master, text="Nom de l'évènement:", fg_color="#ebebeb")
+        self.create_ui()
+
+    def center_window(self, width, height):
+        screen_width = self.master.winfo_screenwidth()
+        screen_height = self.master.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        self.master.geometry(f'{width}x{height}+{x}+{y}')
+
+    def create_ui(self):
+        # Create a frame for the left and right sections
+        self.top_frame = ctk.CTkFrame(self.main_frame, fg_color="#ebebeb")
+        self.top_frame.pack(fill="x", padx=10, pady=10)
+
+        # Left Frame - Add Event Section
+        self.left_frame = ctk.CTkFrame(self.top_frame, fg_color="#ebebeb")
+        self.left_frame.pack(side="left", fill="both", expand=True, padx=10)
+
+        self.add_section_header(self.left_frame, "AJOUTER EVENEMENT")
+
+        self.event_name_label = ctk.CTkLabel(self.left_frame, text="Nom de l'évènement:", fg_color="#ebebeb")
         self.event_name_label.pack(pady=5)
-        self.event_name_entry = ctk.CTkEntry(master)
+        self.event_name_entry = ctk.CTkEntry(self.left_frame)
         self.event_name_entry.pack(pady=5)
 
-        self.event_date_label = ctk.CTkLabel(master, text="Date prévue:", fg_color="#ebebeb")
+        self.event_date_label = ctk.CTkLabel(self.left_frame, text="Date prévue:", fg_color="#ebebeb")
         self.event_date_label.pack(pady=5)
-        self.event_date_entry = ctk.CTkEntry(master)
+        self.event_date_entry = ctk.CTkEntry(self.left_frame)
         self.event_date_entry.pack(pady=5)
 
-        self.add_event_button = ctk.CTkButton(master, text="Ajouter l'évènement", command=self.add_event)
+        self.add_event_button = ctk.CTkButton(self.left_frame, text="Ajouter l'évènement", command=self.add_event)
         self.add_event_button.pack(pady=10)
 
-        # Existing Events Section
-        self.add_section_header(master, "SELECTIONNER L'EVENEMENT")
+        # Right Frame - Select Event Section
+        self.right_frame = ctk.CTkFrame(self.top_frame, fg_color="#ebebeb")
+        self.right_frame.pack(side="right", fill="both", expand=True, padx=10)
 
-        self.events_frame = ctk.CTkFrame(master, fg_color="#ebebeb")
-        self.events_frame.pack(pady=10)
+        self.add_section_header(self.right_frame, "SELECTIONNER EVENEMENT")
+
+        self.events_frame = ctk.CTkScrollableFrame(self.right_frame, fg_color="#ebebeb", height=200)
+        self.events_frame.pack(pady=10, fill="both", expand=True)
         self.load_events()
 
-        # Upload Images Section
-        self.add_section_header(master, "TELECHARGER DES TICKETS")
+        # Bottom Frame - Upload and Process Tickets Section
+        self.bottom_frame = ctk.CTkFrame(self.main_frame, fg_color="#ebebeb")
+        self.bottom_frame.pack(fill="both", expand=True, pady=10)
 
-        self.upload_button = ctk.CTkButton(master, text="Télécharger les tickets", command=self.upload_tickets)
+        self.add_section_header(self.bottom_frame, "TELECHARGER DES TICKETS")
+
+        self.upload_button = ctk.CTkButton(self.bottom_frame, text="Télécharger les tickets", command=self.upload_tickets)
         self.upload_button.pack(pady=10)
 
-        self.images_frame = ctk.CTkFrame(master, fg_color="white")
-        self.images_frame.pack(pady=10)
+        self.images_frame = ctk.CTkScrollableFrame(self.bottom_frame, fg_color="white", height=200)
+        self.images_frame.pack(pady=10, fill="both")
 
-        self.process_tickets_button = ctk.CTkButton(master, text="Traiter les tickets", command=self.process_tickets)
+        self.process_tickets_button = ctk.CTkButton(self.bottom_frame, text="Traiter les tickets", command=self.process_tickets)
         self.process_tickets_button.pack(pady=10)
 
         self.uploaded_images = []
 
     def add_section_header(self, parent, title):
         frame = ctk.CTkFrame(parent, fg_color="black")
-        frame.pack(pady=10, fill='x', expand=True)
+        frame.pack(pady=10, fill='x')
 
         label = ctk.CTkLabel(frame, text=title, font=("Arial", 14, 'bold'), text_color='white', fg_color="black")
         label.pack(pady=5, padx=5, fill='x', expand=True)
@@ -134,7 +162,6 @@ class TicketApp:
 
             for image_path in image_paths:
                 try:
-                    # shutil.copy(image_path, "./receipt_queue")
                     self.uploaded_images.append(image_path)
                     image_label = ctk.CTkLabel(self.images_frame, text=os.path.basename(image_path), fg_color="#ebebeb")
                     image_label.pack(pady=2)
@@ -163,10 +190,7 @@ class TicketApp:
 
             for image in self.uploaded_images:
                 try:
-                    # shutil.copy(image, source_folder)
-                    # logger.info(f"Copied {image} to {source_folder}")
-                    receipt_reader.process_image(image, destination_folder, api_key, db_path,
-                                                 self.selected_event_id)
+                    receipt_reader.process_image(image, destination_folder, api_key, db_path, self.selected_event_id)
                 except PermissionError as e:
                     logger.error(f"Permission error: {e}")
                 except Exception as e:
