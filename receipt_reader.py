@@ -4,8 +4,20 @@ import os
 import shutil
 import time
 import logging
+
+import ui
 from database import initialize_database, insert_receipt_data  # Importing the database functions
 from datetime import datetime
+
+# Configuration des logs pour affichage dans la console uniquement
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s - [%(filename)s:%(lineno)d] - %(funcName)s()',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[logging.StreamHandler()]
+)
+
+logger = logging.getLogger(__name__)
 
 
 # Function to get the OpenAI API Key
@@ -39,33 +51,25 @@ def create_payload(base64_image):
         prompt = (
             "Veuillez analyser l'image du reçu suivante et fournir les informations au format suivant :\n"
             "date, fournisseur, localisation (seulement la ville)\n"
-            "famille d'articles (tu détermineras la famille en fonction de l'article concerné parmi les catégories suivantes ALIMENTATION, ANIMATION, ENERGIE, ALCOOL, LOGISTIQUE, MATERIEL)\n"
-            "nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "..., ..., ..., ..., ...\n"
-            "famille d'articles (tu détermineras la famille en fonction de l'article concerné parmi les catégories suivantes ALIMENTATION, ANIMATION, ENERGIE, ALCOOL, LOGISTIQUE, MATERIEL)\n"
-            "nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "..., ..., ..., ..., ...\n"
-            "..., ..., ..., ..., ...\n"
+            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
+            "..., ..., ..., ..., ..., ...\n"
             "INSTRUCTION IMPORTANTE:\n"
             "Veille à fournir les informations demandées et seulement ces informations\n"
             "EXEMPLE DE SORTIE ATTENDUE N°1:\n"
             "31/08/2023, Intermarché, Foix\n"
             "ALIMENTATION\n"
-            "Vico Chips Class.Nat, 3.56, 1, 3.56\n"
-            "Pat. Emmental Rape 3, 3.01, 1, 3.01\n"
-            "Pat Beurre Moule DX, 4.63, 1, 4.63"
+            "Alimentation, snacking, Vico Chips Class.Nat, 3.56, 1, 3.56\n"
+            "Alimentation, crèmerie, Pat. Emmental Rape 3, 3.01, 1, 3.01\n"
+            "Alimentation, crèmerie, Pat Beurre Moule DX, 4.63, 1, 4.63"
             "EXEMPLE DE SORTIE ATTENDUE N°2:\n"
             "31/08/2023, Intermarché, Foix\n"
-            "MATERIEL\n"
-            "Tente de spectacle, 437, 1, 427\n"
-            "ENERGIE\n"
-            "Essence au litre, 1,72, 40, 68.80\n"
-            "ALIMENTATION\n"
-            "Paté de campagne, 4.63, 1, 4.63"
+            "Fournitures, équipement, Tente de spectacle, 437, 1, 427\n"
+            "Energie, carburant, Essence au litre, 1,72, 40, 68.80\n"
+            "Alimentation, charcuterie, Paté de campagne, 4.63, 1, 4.63"
         )
 
         return {
@@ -122,7 +126,7 @@ def parse_response(response):
             output = response["choices"][0]["message"]["content"]
             output = output.split("\n")
 
-            if len(output) < 3:
+            if len(output) < 2:
                 logger.warning("Unexpected response format: Not enough lines in output.")
                 return None
 
@@ -142,22 +146,22 @@ def parse_response(response):
             fournisseur = date_fournisseur_localisation[1].strip()
             localisation = date_fournisseur_localisation[2].strip()
 
-            categorie = output[1].split(",")[0].strip()
-
-            articles = output[2:]
+            articles = output[1:]
             parsed_articles = []
             for article in articles:
                 article_parts = article.split(",")
-                if len(article_parts) < 4:
+                if len(article_parts) < 5:
                     logger.warning(f"Unexpected response format: Not enough elements in article '{article}'.")
                     continue
 
                 try:
                     parsed_articles.append({
-                        "nom": article_parts[0].strip(),
-                        "prix_unitaire": float(article_parts[1].strip()),
-                        "quantite": float(article_parts[2].strip()),
-                        "prix_total": float(article_parts[3].strip())
+                        "famille": article_parts[0].strip(),
+                        "sous_famille": article_parts[1].strip(),
+                        "nom": article_parts[2].strip(),
+                        "prix_unitaire": float(article_parts[3].strip()),
+                        "quantite": float(article_parts[4].strip()),
+                        "prix_total": float(article_parts[5].strip())
                     })
                 except ValueError as e:
                     logger.error(f"Error parsing article data: {e}")
@@ -167,7 +171,6 @@ def parse_response(response):
                 "date": date,
                 "fournisseur": fournisseur,
                 "localisation": localisation,
-                "categorie": categorie,
                 "articles": parsed_articles
             }
         else:
@@ -178,9 +181,8 @@ def parse_response(response):
         return None
 
 
-
 # Function to process a single image
-def process_image(image_path, destination_folder, api_key, db_path):
+def process_image(image_path, destination_folder, api_key, db_path, event_id):
     try:
         logger.info(f"Processing image: {image_path}")
         base64_image = encode_image(image_path)
@@ -190,50 +192,26 @@ def process_image(image_path, destination_folder, api_key, db_path):
         parsed_data = parse_response(response)
         if parsed_data:
             print(f"Date: {parsed_data['date']}, Fournisseur: {parsed_data['fournisseur']}, Localisation: {parsed_data['localisation']}")
-            print(f"Catégorie: {parsed_data['categorie']}")
 
             for article in parsed_data["articles"]:
-                print(f"Nom: {article['nom']}, Prix unitaire: {article['prix_unitaire']}, Quantité: {article['quantite']}, Prix total: {article['prix_total']}")
+                print(f"Famile: {article['famille']}, Sous Famille: {article['sous_famille']}, Nom: {article['nom']}, Prix unitaire: {article['prix_unitaire']}, Quantité: {article['quantite']}, Prix total: {article['prix_total']}")
 
             # Insert data into database
-            insert_receipt_data(db_path, parsed_data)
+            insert_receipt_data(db_path, parsed_data, event_id)
+            # Move processed image to destination folder
+            try:
+                shutil.move(image_path, os.path.join(destination_folder, os.path.basename(image_path)))
+                logger.info(f"Moved processed image to: {destination_folder}")
+            except FileNotFoundError as e:
+                logger.error(f"Error moving file: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error moving file: {e}")
         else:
             logger.warning("Parsed data is empty.")
 
     except Exception as e:
         logger.error(f"Error processing image {os.path.basename(image_path)}: {e}")
 
-
-# Main function to monitor the source folder and process images one by one
-def main(source_folder, destination_folder):
-    try:
-        api_key = get_api_key()
-        no_image_count = 0
-
-        while True:
-            images = [f for f in os.listdir(source_folder) if os.path.isfile(os.path.join(source_folder, f))]
-            if images:
-                no_image_count = 0
-                image_path = os.path.join(source_folder, images[0])
-                process_image(image_path, destination_folder, api_key)
-                # Move processed image to destination folder
-                try:
-                    shutil.move(image_path, os.path.join(destination_folder, os.path.basename(image_path)))
-                    logger.info(f"Moved processed image to: {destination_folder}")
-                except FileNotFoundError as e:
-                    logger.error(f"Error moving file: {e}")
-                except Exception as e:
-                    logger.error(f"Unexpected error moving file: {e}")
-            else:
-                no_image_count += 1
-                logger.info(f"No images to process. Attempt {no_image_count}/3.")
-                if no_image_count >= 3:
-                    logger.info("No images to process for 3 consecutive attempts. Exiting.")
-                    break
-                time.sleep(5)  # Wait for 5 seconds before checking again
-
-    except Exception as e:
-        logger.error(f"Error in main function: {e}")
 
 # Path to your source and destination folders
 source_folder = "./receipt_queue"
@@ -242,31 +220,5 @@ destination_folder = "./receipt_processed"
 # Ensure the destination folder exists
 os.makedirs(destination_folder, exist_ok=True)
 
-if __name__ == "__main__":
-    # Configuration des logs pour affichage dans la console uniquement
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(levelname)s - %(message)s - [%(filename)s:%(lineno)d] - %(funcName)s()',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[logging.StreamHandler()]
-    )
 
-    logger = logging.getLogger(__name__)
-
-    # Path to your source and destination folders
-    source_folder = "./receipt_queue"
-    destination_folder = "./receipt_processed"
-    db_path = "./receipts.db"
-
-    # Ensure the destination folder exists
-    os.makedirs(destination_folder, exist_ok=True)
-
-    # Initialize the database
-    initialize_database(db_path)
-
-    # Process images
-    for image_filename in os.listdir(source_folder):
-        image_path = os.path.join(source_folder, image_filename)
-        if os.path.isfile(image_path):
-            process_image(image_path, destination_folder, get_api_key(), db_path)
 
