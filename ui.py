@@ -178,6 +178,7 @@ class TicketApp:
         try:
             if self.selected_event_id is None:
                 logger.warning("No event selected")
+                messagebox.showwarning("Warning", f"Vous devez séléctionner un évènement dans la section\n SELECTIONNER EVENEMENT")
                 return
 
             source_folder = "./receipt_queue"

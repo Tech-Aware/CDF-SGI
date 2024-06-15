@@ -44,6 +44,19 @@ def encode_image(image_path):
         logger.error(f"Error encoding image: {e}")
         raise
 
+articles_list = [
+    "Alimentation",
+    "Boissons non alcoolisées",
+    "Boissons alcoolisées",
+    "Hygiène et Santé",
+    "Vêtements et Accessoires",
+    "Électronique et Informatique",
+    "Maison et Jardin",
+    "Loisirs et Divertissements",
+    "Transports",
+    "Services",
+    "Animaux"
+]
 
 # Function to create the payload
 def create_payload(base64_image):
@@ -59,6 +72,9 @@ def create_payload(base64_image):
             "..., ..., ..., ..., ..., ...\n"
             "INSTRUCTION IMPORTANTE:\n"
             "Veille à fournir les informations demandées et seulement ces informations\n"
+            "Pour les famille d'article, utilise les informations ci-dessous:\n"
+            f"{articles_list}\n"
+            f"SI L'IMAGE n'est pas un ticket de caisse ou une facture répondre 'NO RECEIPT PROVIDED'\n"
             "EXEMPLE DE SORTIE ATTENDUE N°1:\n"
             "31/08/2023, Intermarché, Foix\n"
             "ALIMENTATION\n"
@@ -128,11 +144,13 @@ def parse_response(response):
 
             if len(output) < 2:
                 logger.warning("Unexpected response format: Not enough lines in output.")
+                ui.messagebox.showwarning("Warning", f"Les données extraitent ne correspondent pas à celle d'un ticket de caisse ou d'une facture.")
                 return None
 
             date_fournisseur_localisation = output[0].split(",")
             if len(date_fournisseur_localisation) < 3:
                 logger.warning("Unexpected response format: Not enough elements in date_fournisseur_localisation.")
+                ui.messagebox.showwarning("Warning", f"Les données extraitent ne correspondent pas à celle d'un ticket de caisse ou d'une facture.")
                 return None
 
             # Format the date
@@ -208,6 +226,8 @@ def process_image(image_path, destination_folder, api_key, db_path, event_id):
                 logger.error(f"Unexpected error moving file: {e}")
         else:
             logger.warning("Parsed data is empty.")
+            ui.messagebox.showwarning("Warning", f"VERIFIER LES FICHIERS IMPORTES DANS LA LISTE")
+
 
     except Exception as e:
         logger.error(f"Error processing image {os.path.basename(image_path)}: {e}")
