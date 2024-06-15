@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock, call
 import sqlite3
 import logging
-from database import initialize_database, insert_receipt_data, insert_event
+from database import initialize_database, insert_receipt_data, insert_event, insert_event_with_iteration, EventExistsError, EventDateMismatchError
 
 
 class TestDatabaseFunctions(unittest.TestCase):
@@ -26,10 +26,12 @@ class TestDatabaseFunctions(unittest.TestCase):
         mock_connect.return_value = mock_conn
         mock_cursor = mock_conn.cursor.return_value
 
+        mock_cursor.fetchall.return_value = []
+
         insert_event('test.db', 'Test Event', '2024-01-01')
 
         mock_connect.assert_called_once_with('test.db')
-        mock_cursor.execute.assert_called_once_with('''
+        mock_cursor.execute.assert_called_with('''
             INSERT INTO event (event_name, event_date)
             VALUES (?, ?)
         ''', ('Test Event', '2024-01-01'))
@@ -109,6 +111,41 @@ class TestDatabaseFunctions(unittest.TestCase):
         mock_conn.commit.assert_called_once()
         mock_conn.close.assert_called_once()
 
+    @patch('database.sqlite3.connect')
+    def test_insert_event_with_date_mismatch(self, mock_connect):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.fetchall.return_value = [('Test Event', '2024-01-01')]
+
+        with self.assertRaises(EventDateMismatchError):
+            insert_event('test.db', 'Test Event', '2024-01-02')
+
+        mock_connect.assert_called_once_with('test.db')
+        mock_cursor.execute.assert_called_with('''
+            SELECT event_name, event_date FROM event WHERE event_name LIKE ?
+        ''', ('%Test Event%',))
+        mock_conn.close.assert_called_once()
+
+    @patch('database.sqlite3.connect')
+    def test_insert_event_with_iteration(self, mock_connect):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.fetchone.return_value = [1]
+
+        insert_event_with_iteration('test.db', 'Test Event', '2024-01-01')
+
+        mock_connect.assert_called_once_with('test.db')
+        mock_cursor.execute.assert_any_call('''
+            SELECT COUNT(*) FROM event WHERE event_name LIKE ?
+        ''', ('%Test Event%',))
+        mock_cursor.execute.assert_any_call('''
+            INSERT INTO event (event_name, event_date)
+            VALUES (?, ?)
+        ''', ('Test Event (2)', '2024-01-01'))
+        mock_conn.commit.assert_called_once()
+        mock_conn.close.assert_called_once()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
