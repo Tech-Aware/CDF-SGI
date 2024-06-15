@@ -4,7 +4,7 @@ import os
 import shutil
 import logging
 import receipt_reader
-from database import initialize_database, insert_event
+from database import initialize_database, insert_event, EventExistsError
 import sqlite3
 
 # Configuration des logs pour affichage dans la console uniquement
@@ -79,11 +79,15 @@ class TicketApp:
         try:
             event_name = self.event_name_entry.get()
             event_date = self.event_date_entry.get()
-            insert_event(self.db_path, event_name, event_date)
+            message = insert_event(self.db_path, event_name, event_date)
             self.load_events()
+            self.show_info(message)
+        except EventExistsError as e:
+            logger.error(f"EventExistsError: {e}")
+            messagebox.showerror("Erreur", str(e))
         except Exception as e:
             logger.error(f"An error occurred while adding the event: {e}")
-            raise
+            messagebox.showerror("Erreur", f"An unexpected error occurred: {e}")
 
     def load_events(self):
         try:
