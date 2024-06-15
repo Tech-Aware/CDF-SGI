@@ -1,10 +1,10 @@
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import os
 import shutil
 import logging
 import receipt_reader
-from database import initialize_database, insert_event, EventExistsError
+from database import initialize_database, insert_event, insert_event_with_iteration, EventExistsError, EventDateMismatchError
 import sqlite3
 
 # Configuration des logs pour affichage dans la console uniquement
@@ -85,6 +85,13 @@ class TicketApp:
         except EventExistsError as e:
             logger.error(f"EventExistsError: {e}")
             messagebox.showerror("Erreur", str(e))
+        except EventDateMismatchError as e:
+            logger.error(f"EventDateMismatchError: {e}")
+            result = messagebox.askyesno("Avertissement", f"{str(e)}\nVoulez-vous ajouter un nouvel évènement avec une nouvelle date?")
+            if result:
+                message = insert_event_with_iteration(self.db_path, event_name, event_date)
+                self.load_events()
+                self.show_info(message)
         except Exception as e:
             logger.error(f"An error occurred while adding the event: {e}")
             messagebox.showerror("Erreur", f"An unexpected error occurred: {e}")
