@@ -1,10 +1,11 @@
 import sqlite3
 import logging
 
-
 class EventExistsError(Exception):
     pass
 
+class EventDateMismatchError(Exception):
+    pass
 
 def initialize_database(db_path):
     try:
@@ -48,11 +49,10 @@ def initialize_database(db_path):
         logging.info("Table 'articles' initialized or already exists.")
 
         conn.commit()
-        conn.close()
-        logging.info("Database initialized successfully.")
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
-
+    finally:
+        conn.close()
 
 def insert_receipt_data(db_path, receipt_data, event_id):
     try:
@@ -85,11 +85,10 @@ def insert_receipt_data(db_path, receipt_data, event_id):
             logging.info(
                 f"Inserted article for receipt ID {receipt_id}: Famille: {article['famille']}, Sous famille: {article['sous_famille']}, Nom: {article['nom']}, Prix unitaire: {article['prix_unitaire']}, Quantité: {article['quantite']}, Prix total: {article['prix_total']}")
         conn.commit()
-        conn.close()
-        logging.info("Data inserted successfully.")
     except Exception as e:
         logging.error(f"Error inserting data into database: {e}")
-
+    finally:
+        conn.close()
 
 def insert_event(db_path, event_name, event_date):
     try:
@@ -98,11 +97,15 @@ def insert_event(db_path, event_name, event_date):
 
         # Check if an event with the same or similar name already exists
         cursor.execute('''
-            SELECT event_name FROM event WHERE event_name LIKE ?
+            SELECT event_name, event_date FROM event WHERE event_name LIKE ?
         ''', (f'%{event_name}%',))
         existing_events = cursor.fetchall()
 
         if existing_events:
+            for existing_event in existing_events:
+                if existing_event[1] != event_date:
+                    logging.warning(f"Event with a similar name but different date already exists: {existing_event}")
+                    raise EventDateMismatchError(f"L'évènement existe déjà avec une date différente:\n {existing_event}")
             logging.error(f"Event with a similar name already exists: {existing_events}")
             raise EventExistsError(f"L'évènement existe déjà:\n {existing_events}")
 
@@ -112,25 +115,43 @@ def insert_event(db_path, event_name, event_date):
         ''', (event_name, event_date))
 
         conn.commit()
-        conn.close()
         logging.info(f"Event '{event_name}' added successfully.")
         return f"Event '{event_name}' added successfully."
     except EventExistsError as e:
         raise e
+    except EventDateMismatchError as e:
+        raise e
     except Exception as e:
         logging.error(f"Error inserting event into database: {e}")
         return f"Error inserting event into database: {e}"
+    finally:
+        if conn:
+            conn.close()
 
-
-# Example usage in UI
-def ui_add_event(db_path, event_name, event_date):
+def insert_event_with_iteration(db_path, event_name, event_date):
     try:
-        message = insert_event(db_path, event_name, event_date)
-        # Display success message in UI popup
-        print(message)  # Replace with actual UI popup code
-    except EventExistsError as e:
-        # Display error message in UI popup
-        print(e)  # Replace with actual UI popup code
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Count existing events with the same name or similar
+        cursor.execute('''
+            SELECT COUNT(*) FROM event WHERE event_name LIKE ?
+        ''', (f'%{event_name}%',))
+        count = cursor.fetchone()[0]
+
+        new_event_name = f"{event_name} ({count + 1})"
+
+        cursor.execute('''
+            INSERT INTO event (event_name, event_date)
+            VALUES (?, ?)
+        ''', (new_event_name, event_date))
+
+        conn.commit()
+        logging.info(f"Event '{new_event_name}' added successfully.")
+        return f"Event '{new_event_name}' added successfully."
     except Exception as e:
-        # Display generic error message in UI popup
-        print(f"An unexpected error occurred: {e}")  # Replace with actual UI popup code
+        logging.error(f"Error inserting event with iteration into database: {e}")
+        return f"Error inserting event with iteration into database: {e}"
+    finally:
+        if conn:
+            conn.close()
