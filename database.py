@@ -1,6 +1,11 @@
 import sqlite3
 import logging
 
+
+class EventExistsError(Exception):
+    pass
+
+
 def initialize_database(db_path):
     try:
         conn = sqlite3.connect(db_path)
@@ -48,6 +53,7 @@ def initialize_database(db_path):
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
 
+
 def insert_receipt_data(db_path, receipt_data, event_id):
     try:
         conn = sqlite3.connect(db_path)
@@ -57,7 +63,7 @@ def insert_receipt_data(db_path, receipt_data, event_id):
             INSERT INTO receipts (event_id, date, fournisseur, localisation)
             VALUES (?, ?, ?, ?)
         ''', (
-        event_id, receipt_data['date'], receipt_data['fournisseur'], receipt_data['localisation']))
+            event_id, receipt_data['date'], receipt_data['fournisseur'], receipt_data['localisation']))
 
         receipt_id = cursor.lastrowid
         logging.info(
@@ -84,16 +90,47 @@ def insert_receipt_data(db_path, receipt_data, event_id):
     except Exception as e:
         logging.error(f"Error inserting data into database: {e}")
 
+
 def insert_event(db_path, event_name, event_date):
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+
+        # Check if an event with the same or similar name already exists
+        cursor.execute('''
+            SELECT event_name FROM event WHERE event_name LIKE ?
+        ''', (f'%{event_name}%',))
+        existing_events = cursor.fetchall()
+
+        if existing_events:
+            logging.error(f"Event with a similar name already exists: {existing_events}")
+            raise EventExistsError(f"L'évènement existe déjà:\n {existing_events}")
+
         cursor.execute('''
             INSERT INTO event (event_name, event_date)
             VALUES (?, ?)
         ''', (event_name, event_date))
+
         conn.commit()
         conn.close()
         logging.info(f"Event '{event_name}' added successfully.")
+        return f"Event '{event_name}' added successfully."
+    except EventExistsError as e:
+        raise e
     except Exception as e:
         logging.error(f"Error inserting event into database: {e}")
+        return f"Error inserting event into database: {e}"
+
+
+# Example usage in UI
+def ui_add_event(db_path, event_name, event_date):
+    try:
+        message = insert_event(db_path, event_name, event_date)
+        # Display success message in UI popup
+        print(message)  # Replace with actual UI popup code
+    except EventExistsError as e:
+        # Display error message in UI popup
+        print(e)  # Replace with actual UI popup code
+    except Exception as e:
+        # Display generic error message in UI popup
+        print(f"An unexpected error occurred: {e}")  # Replace with actual UI popup code
