@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import os
 import shutil
 import logging
@@ -7,7 +7,7 @@ import receipt_reader
 from database import initialize_database, insert_event
 import sqlite3
 
-# Configuration des logs pour affpipichage dans la console uniquement
+# Configuration des logs pour affichage dans la console uniquement
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s - [%(filename)s:%(lineno)d] - %(funcName)s()',
@@ -21,6 +21,7 @@ class TicketApp:
     def __init__(self, master):
         self.master = master
         self.master.title("Ticket Management System")
+        self.master.configure(bg="#ebebeb")
 
         self.db_path = './receipts.db'
         initialize_database(self.db_path)
@@ -28,35 +29,51 @@ class TicketApp:
         self.selected_event_id = None
 
         # Add Event Section
-        self.event_name_label = ctk.CTkLabel(master, text="Event Name")
+        self.add_section_header(master, "AJOUTER UN EVENEMENT")
+
+        self.event_name_label = ctk.CTkLabel(master, text="Nom de l'évènement:", fg_color="#ebebeb")
         self.event_name_label.pack(pady=5)
         self.event_name_entry = ctk.CTkEntry(master)
         self.event_name_entry.pack(pady=5)
 
-        self.event_date_label = ctk.CTkLabel(master, text="Event Date")
+        self.event_date_label = ctk.CTkLabel(master, text="Date prévue:", fg_color="#ebebeb")
         self.event_date_label.pack(pady=5)
         self.event_date_entry = ctk.CTkEntry(master)
         self.event_date_entry.pack(pady=5)
 
-        self.add_event_button = ctk.CTkButton(master, text="Add Event", command=self.add_event)
+        self.add_event_button = ctk.CTkButton(master, text="Ajouter l'évènement", command=self.add_event)
         self.add_event_button.pack(pady=10)
 
         # Existing Events Section
-        self.events_frame = ctk.CTkFrame(master)
+        self.add_section_header(master, "SELECTIONNER L'EVENEMENT")
+
+        self.events_frame = ctk.CTkFrame(master, fg_color="#ebebeb")
         self.events_frame.pack(pady=10)
         self.load_events()
 
         # Upload Images Section
-        self.upload_button = ctk.CTkButton(master, text="Upload Tickets", command=self.upload_tickets)
+        self.add_section_header(master, "TELECHARGER DES TICKETS")
+
+        self.upload_button = ctk.CTkButton(master, text="Télécharger les tickets", command=self.upload_tickets)
         self.upload_button.pack(pady=10)
 
-        self.images_frame = ctk.CTkFrame(master)
+        self.images_frame = ctk.CTkFrame(master, fg_color="white")
         self.images_frame.pack(pady=10)
 
-        self.process_tickets_button = ctk.CTkButton(master, text="Process Tickets", command=self.process_tickets)
+        self.process_tickets_button = ctk.CTkButton(master, text="Traiter les tickets", command=self.process_tickets)
         self.process_tickets_button.pack(pady=10)
 
         self.uploaded_images = []
+
+    def add_section_header(self, parent, title):
+        frame = ctk.CTkFrame(parent, fg_color="black")
+        frame.pack(pady=10, fill='x', expand=True)
+
+        label = ctk.CTkLabel(frame, text=title, font=("Arial", 14, 'bold'), text_color='white', fg_color="black")
+        label.pack(pady=5, padx=5, fill='x', expand=True)
+
+    def show_info(self, info_text):
+        messagebox.showinfo("Informations", info_text)
 
     def add_event(self):
         try:
@@ -108,7 +125,7 @@ class TicketApp:
                 try:
                     # shutil.copy(image_path, "./receipt_queue")
                     self.uploaded_images.append(image_path)
-                    image_label = ctk.CTkLabel(self.images_frame, text=os.path.basename(image_path))
+                    image_label = ctk.CTkLabel(self.images_frame, text=os.path.basename(image_path), fg_color="#ebebeb")
                     image_label.pack(pady=2)
                 except PermissionError as e:
                     logger.error(f"Permission error: {e}")
