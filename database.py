@@ -1,3 +1,4 @@
+# database.py
 import sqlite3
 import logging
 
@@ -155,3 +156,47 @@ def insert_event_with_iteration(db_path, event_name, event_date):
     finally:
         if conn:
             conn.close()
+
+
+def get_event_details(db_path, event_id):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT e.event_name, e.event_date, r.id as receipt_id, r.date as receipt_date, r.fournisseur, r.localisation,
+                   a.id as article_id, a.famille, a.sous_famille, a.nom, a.prix_unitaire, a.quantite, a.prix_total
+            FROM event e
+            JOIN receipts r ON e.id = r.event_id
+            JOIN articles a ON r.id = a.receipt_id
+            WHERE e.id = ?
+        ''', (event_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return rows
+    except Exception as e:
+        logging.error(f"Error fetching event details: {e}")
+        raise e
+
+def get_event_total(db_path, event_id):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT SUM(a.prix_total)
+            FROM event e
+            JOIN receipts r ON e.id = r.event_id
+            JOIN articles a ON r.id = a.receipt_id
+            WHERE e.id = ?
+        ''', (event_id,))
+
+        total = cursor.fetchone()[0]
+        conn.close()
+
+        return total
+    except Exception as e:
+        logging.error(f"Error calculating event total: {e}")
+        raise e

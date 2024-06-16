@@ -12,7 +12,7 @@ from datetime import datetime
 # Configuration des logs pour affichage dans la console uniquement
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s - [%(filename)s:%(lineno)d] - %(funcName)s()',
+    format='%(asctime)s - %(levellevelname)s - %(message)s - [%(filename)s:%(lineno)d] - %(funcName)s()',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[logging.StreamHandler()]
 )
@@ -46,35 +46,55 @@ def encode_image(image_path):
 
 articles_list = [
     "Alimentation",
-    "Boissons non alcoolisées",
-    "Boissons alcoolisées",
-    "Hygiène et Santé",
+    "Boissons",
+    "Transports",
+    "Services",
+]
+sub_articles_list = [
+    "Snacking",
+    "Alcoolisées",
+    "Non Alcoolisées",
+    "Crèmerie",
+    "Charcuterie",
+    "Viande",
+    "Boulangerie",
+    "Surgelés",
     "Vêtements et Accessoires",
     "Électronique et Informatique",
     "Maison et Jardin",
     "Loisirs et Divertissements",
-    "Transports",
-    "Services",
-    "Animaux"
+    "Hygiène et Santé"
 ]
 
 # Function to create the payload
 def create_payload(base64_image):
     try:
         prompt = (
-            "Veuillez analyser l'image du reçu suivante et fournir les informations au format suivant :\n"
+            "Veuillez analyser l'image du reçu joint. Lire méticuleusement le tickets joints et fournir les informations au format suivant :\n"
             "date, fournisseur, localisation (seulement la ville)\n"
-            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
-            "famille, sous_famille, nom de l'article de la sous-famille, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, article, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, article, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, article, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, article, prix unitaire, quantité, prix total\n"
+            "famille, sous_famille, article, prix unitaire, quantité, prix total\n"
             "..., ..., ..., ..., ..., ...\n"
             "INSTRUCTION IMPORTANTE:\n"
             "Veille à fournir les informations demandées et seulement ces informations\n"
+            "Pour les famille et les sous famille priorise avant tous les listes suivantes:\n"
             "Pour les famille d'article, utilise les informations ci-dessous:\n"
+            "L'article, ses quantité, son prix unitaire et total se trouve strictement sur la même ligne"
+            "Ne pas arrondir, ni les quantité, ni les montants"
+            "SI la colonne du prix unitaire est HT, ALORS calculer le prix TTC en ajoutant le pourcentage de TVA indiqué"
+            "SI la ligne se nomme total, ALORS ne pas la prendre en compte"
+            "SI les quantité correspondent à la ligne 'Total' ALORS ne pas tenir compte de cette quantité"
             f"{articles_list}\n"
+            f"Et pour les sous-famille les informations ci-dessous:\n"
+            f"{sub_articles_list}"
             f"SI L'IMAGE n'est pas un ticket de caisse ou une facture répondre 'NO RECEIPT PROVIDED'\n"
+            f"SI c'est du Gaz, de l'essence, de l'électricité, du bois, ou tout autre carburant, ALORS la famille est Energie\n"
+            "SI c'est quelque chose qui se mange ou qui se boit pour un être vivant, ALORS la famille est Alimentation\n"
+            "SI ce n'est pas quelque chose qui se mange, ALORS c'est soit une Fourniture, soit de la logistique\n"
+            "Fait des recherches sur le web pour t'assurer que tu as bien définit les familles et sous familles\n"
             "EXEMPLE DE SORTIE ATTENDUE N°1:\n"
             "31/08/2023, Intermarché, Foix\n"
             "ALIMENTATION\n"
@@ -107,7 +127,7 @@ def create_payload(base64_image):
                     ]
                 }
             ],
-            "max_tokens": 300
+            "max_tokens": 1000
         }
     except Exception as e:
         logger.error(f"Error creating payload: {e}")
@@ -140,37 +160,38 @@ def parse_response(response):
     try:
         if "choices" in response and len(response["choices"]) > 0:
             output = response["choices"][0]["message"]["content"]
-            output = output.split("\n")
+            output_lines = output.split("\n")
 
-            if len(output) < 2:
+            if len(output_lines) < 2:
                 logger.warning("Unexpected response format: Not enough lines in output.")
-                ui.messagebox.showwarning("Warning", f"Les données extraitent ne correspondent pas à celle d'un ticket de caisse ou d'une facture.")
-                return None
+                return None, True  # Indiquer que le format est incorrect
 
-            date_fournisseur_localisation = output[0].split(",")
+            date_fournisseur_localisation = output_lines[0].split(",")
             if len(date_fournisseur_localisation) < 3:
                 logger.warning("Unexpected response format: Not enough elements in date_fournisseur_localisation.")
-                ui.messagebox.showwarning("Warning", f"Les données extraitent ne correspondent pas à celle d'un ticket de caisse ou d'une facture.")
-                return None
+                return None, True  # Indiquer que le format est incorrect
 
-            # Format the date
             date_str = date_fournisseur_localisation[0].strip()
             try:
                 date = datetime.strptime(date_str, "%d/%m/%Y").date()
             except ValueError as e:
                 logger.error(f"Error parsing date: {e}")
-                return None
+                return None, True  # Indiquer que le format est incorrect
 
             fournisseur = date_fournisseur_localisation[1].strip()
             localisation = date_fournisseur_localisation[2].strip()
 
-            articles = output[1:]
+            articles = output_lines[1:]
             parsed_articles = []
             for article in articles:
+                if article.strip() == "":
+                    logger.warning("Skipping empty line in article list.")
+                    continue  # Ignorer les lignes vides mais ne pas arrêter le traitement
+
                 article_parts = article.split(",")
-                if len(article_parts) < 5:
+                if len(article_parts) < 6:
                     logger.warning(f"Unexpected response format: Not enough elements in article '{article}'.")
-                    continue
+                    return None, True  # Indiquer que le format est incorrect
 
                 try:
                     parsed_articles.append({
@@ -183,40 +204,41 @@ def parse_response(response):
                     })
                 except ValueError as e:
                     logger.error(f"Error parsing article data: {e}")
-                    continue
+                    return None, True  # Indiquer que le format est incorrect
 
             return {
                 "date": date,
                 "fournisseur": fournisseur,
                 "localisation": localisation,
                 "articles": parsed_articles
-            }
+            }, False  # Indiquer que le parsing a réussi sans problème
         else:
             logger.warning("No relevant content found in the response.")
-            return None
+            return None, True  # Indiquer que le format est incorrect
     except Exception as e:
         logger.error(f"Error parsing response: {e}")
-        return None
+        return None, True  # Indiquer que le format est incorrect
 
 
 # Function to process a single image
-def process_image(image_path, destination_folder, api_key, db_path, event_id):
+def process_image(image_path, destination_folder, api_key, db_path, event_id, retry=False):
     try:
         logger.info(f"Processing image: {image_path}")
         base64_image = encode_image(image_path)
         payload = create_payload(base64_image)
         response = send_request(api_key, payload)
 
-        parsed_data = parse_response(response)
+        parsed_data, parse_error = parse_response(response)
         if parsed_data:
+            # Afficher les informations avant l'insertion
             print(f"Date: {parsed_data['date']}, Fournisseur: {parsed_data['fournisseur']}, Localisation: {parsed_data['localisation']}")
-
             for article in parsed_data["articles"]:
-                print(f"Famile: {article['famille']}, Sous Famille: {article['sous_famille']}, Nom: {article['nom']}, Prix unitaire: {article['prix_unitaire']}, Quantité: {article['quantite']}, Prix total: {article['prix_total']}")
+                print(f"Famille: {article['famille']}, Sous Famille: {article['sous_famille']}, Nom: {article['nom']}, Prix unitaire: {article['prix_unitaire']}, Quantité: {article['quantite']}, Prix total: {article['prix_total']}")
 
-            # Insert data into database
+            # Insérer les données dans la base de données
             insert_receipt_data(db_path, parsed_data, event_id)
-            # Move processed image to destination folder
+
+            # Déplacer l'image traitée dans le dossier de destination
             try:
                 shutil.move(image_path, os.path.join(destination_folder, os.path.basename(image_path)))
                 logger.info(f"Moved processed image to: {destination_folder}")
@@ -225,12 +247,20 @@ def process_image(image_path, destination_folder, api_key, db_path, event_id):
             except Exception as e:
                 logger.error(f"Unexpected error moving file: {e}")
         else:
-            logger.warning("Parsed data is empty.")
-            ui.messagebox.showwarning("Warning", f"VERIFIER LES FICHIERS IMPORTES DANS LA LISTE")
-
-
+            if not retry:
+                logger.warning("Data parsing incomplete or error encountered. Retrying...")
+                process_image(image_path, destination_folder, api_key, db_path, event_id, retry=True)
+            else:
+                logger.error("Parsed data is empty or incorrect after retry. Skipping this image.")
+                ui.messagebox.showwarning("Warning", "Les données extraites sont incorrectes après réessai. Image ignorée.")
     except Exception as e:
         logger.error(f"Error processing image {os.path.basename(image_path)}: {e}")
+        if not retry:
+            logger.info("Retrying the process for the image.")
+            process_image(image_path, destination_folder, api_key, db_path, event_id, retry=True)
+        else:
+            logger.error(f"Failed after retrying. Skipping image {os.path.basename(image_path)}")
+            ui.messagebox.showwarning("Warning", f"Erreur dans le traitement de l'image {os.path.basename(image_path)} après réessai. Image ignorée.")
 
 
 # Path to your source and destination folders
@@ -239,6 +269,3 @@ destination_folder = "./receipt_processed"
 
 # Ensure the destination folder exists
 os.makedirs(destination_folder, exist_ok=True)
-
-
-

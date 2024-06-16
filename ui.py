@@ -1,10 +1,10 @@
+# ui.py
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox
 import os
-import shutil
 import logging
 import receipt_reader
-from database import initialize_database, insert_event, insert_event_with_iteration, EventExistsError, EventDateMismatchError
+from database import initialize_database, insert_event, insert_event_with_iteration, get_event_total, EventExistsError, EventDateMismatchError
 import sqlite3
 
 # Configuration des logs pour affichage dans la console uniquement
@@ -23,12 +23,13 @@ class TicketApp:
         self.master.title("Ticket Management System")
         self.master.configure(bg="#ebebeb")
 
-        self.center_window(800, 750)  # Augmenter la hauteur de la fenêtre
+        self.center_window(800, 800)  # Augmenter la hauteur de la fenêtre
 
         self.db_path = './receipts.db'
         initialize_database(self.db_path)
 
         self.selected_event_id = None
+        self.selected_event_label = None
 
         self.main_frame = ctk.CTkFrame(master)
         self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
@@ -80,6 +81,11 @@ class TicketApp:
         self.bottom_frame = ctk.CTkFrame(self.main_frame, fg_color="#ebebeb")
         self.bottom_frame.pack(fill="both", expand=True, pady=10)
 
+        # Label to display selected event
+        self.selected_event_label = ctk.CTkLabel(self.bottom_frame, text="Aucun événement sélectionné",
+                                                 fg_color="#ebebeb", font=("Arial", 12, 'bold'))
+        self.selected_event_label.pack(side='top', pady=5)
+
         self.add_section_header(self.bottom_frame, "TELECHARGER DES TICKETS")
 
         self.upload_button = ctk.CTkButton(self.bottom_frame, text="Télécharger les tickets", command=self.upload_tickets)
@@ -90,6 +96,9 @@ class TicketApp:
 
         self.process_tickets_button = ctk.CTkButton(self.bottom_frame, text="Traiter les tickets", command=self.process_tickets)
         self.process_tickets_button.pack(pady=10)
+
+        self.total_expenses_button = ctk.CTkButton(self.bottom_frame, text="Afficher les dépenses totales", command=self.show_total_expenses)
+        self.total_expenses_button.pack(pady=10)
 
         self.uploaded_images = []
 
@@ -149,6 +158,16 @@ class TicketApp:
     def select_event(self, event_id):
         try:
             self.selected_event_id = event_id
+
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT event_name, event_date FROM event WHERE id = ?", (event_id,))
+            event = cursor.fetchone()
+            conn.close()
+
+            event_name = event[0]
+            event_date = event[1]
+            self.selected_event_label.configure(text=f"Événement sélectionné : {event_name} ({event_date})")
             logger.info(f"Selected Event ID: {event_id}")
         except Exception as e:
             logger.error(f"An error occurred while selecting the event: {e}")
@@ -178,7 +197,8 @@ class TicketApp:
         try:
             if self.selected_event_id is None:
                 logger.warning("No event selected")
-                messagebox.showwarning("Warning", f"Vous devez séléctionner un évènement dans la section\n SELECTIONNER EVENEMENT")
+                messagebox.showwarning("Warning",
+                                       "Vous devez sélectionner un évènement dans la section SELECTIONNER EVENEMENT")
                 return
 
             source_folder = "./receipt_queue"
@@ -206,6 +226,17 @@ class TicketApp:
             logger.error(f"An error occurred while processing tickets: {e}")
             raise
 
+    def show_total_expenses(self):
+        try:
+            if self.selected_event_id is None:
+                messagebox.showwarning("Warning", "Vous devez sélectionner un évènement")
+                return
+
+            total = get_event_total(self.db_path, self.selected_event_id)
+            self.show_info(f"Dépenses totales pour l'événement sélectionné: {total} euros")
+        except Exception as e:
+            logger.error(f"An error occurred while fetching total expenses: {e}")
+            messagebox.showerror("Erreur", f"An error occurred: {e}")
 
 if __name__ == "__main__":
     try:
